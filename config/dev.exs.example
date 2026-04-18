@@ -1,0 +1,46 @@
+import Config
+
+config :bharat_web, BharatWeb.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4000],
+  check_origin: false,
+  code_reloader: true,
+  debug_errors: true,
+  secret_key_base: "dev_secret_key_base_min_64_chars_long_replace_in_prod_xxxxxxxxxxx",
+  watchers: []
+
+config :bharat_data, BharatData.Repo,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "bharat_setu_dev",
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+
+config :ethereumex,
+  url: "https://polygon-amoy.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+  http_options: [timeout: 15_000]
+
+config :bharat_core,
+  polygon_rpc_url: "wss://polygon-amoy.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+  polygon_http_url: "https://polygon-amoy.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+  sepolia_http_url: "https://eth-sepolia.g.alchemy.com/v2/YOUR_ALCHEMY_KEY",
+  lock_contract: "0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519",
+  mint_contract: "0x5b73C5498c1E3b4dbA84de0F1833c4a029d90519",
+  relayer_private_key: "0xYOUR_RELAYER_PRIVATE_KEY",
+  confirmation_depth: 3
+
+config :redix,
+  url: "redis://localhost:6379"
+
+config :bharat_adapters,
+  cbdc_base_url: "http://localhost:4001/mock/cbdc",
+  kyc_adapter: BharatAdapters.KYC.MockClient,
+  registry_adapter: BharatAdapters.Registry.MockStrategy
+
+config :bharat_web, BharatWeb.Auth.Guardian,
+  secret_key: "dev_secret_key_for_bharatsetu_jwt_signing_replace_in_prod"
+
+config :logger, :console,
+  format: "[$level] $message\n",
+  metadata: [:request_id, :retirement_id]

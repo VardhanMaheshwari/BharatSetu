@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Script, console} from "forge-std/Script.sol";
+import {LockBridge} from "../src/LockBridge.sol";
+import {MintBridge} from "../src/MintBridge.sol";
+
+/// Deploy LockBridge on Polygon Amoy:
+///   forge script script/Deploy.s.sol:DeployLock --rpc-url amoy --broadcast --verify
+contract DeployLock is Script {
+    function run() external {
+        vm.startBroadcast();
+        LockBridge lock = new LockBridge();
+        vm.stopBroadcast();
+        console.log("LockBridge (Amoy):", address(lock));
+    }
+}
+
+/// Deploy MintBridge on Ethereum Sepolia:
+///   forge script script/Deploy.s.sol:DeployMint --rpc-url sepolia --broadcast --verify
+contract DeployMint is Script {
+    function run() external {
+        address relayer = vm.envAddress("RELAYER_ADDRESS");
+        vm.startBroadcast();
+        MintBridge mint = new MintBridge(relayer);
+        vm.stopBroadcast();
+        console.log("MintBridge (Sepolia):", address(mint));
+        console.log("Relayer:             ", relayer);
+    }
+}

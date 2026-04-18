@@ -1,0 +1,39 @@
+# Elixir / Mix
+_build/
+deps/
+*.ez
+erl_crash.dump
+.elixir_ls/
+
+# Secrets — copy *.example → * and fill in values
+config/dev.exs
+config/prod.exs
+config/runtime.exs
+contracts/.env
+frontend/.env.local
+frontend/.env*.local
+
+# Frontend build artifacts
+frontend/.next/
+frontend/node_modules/
+frontend/out/
+frontend/tsconfig.tsbuildinfo
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+contracts/broadcast/**/dry-run/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.vscode/settings.json
+
+# Claude internal
+CLAUDE.md
+
+# Docs not for repo
+*.docx
+summary.docx
