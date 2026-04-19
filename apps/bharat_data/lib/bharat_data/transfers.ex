@@ -74,6 +74,7 @@ defmodule BharatData.Transfers do
   # Called by InitTimeoutWorker every 2 min.
   def expire_stale_init_transfers(cutoff_seconds \\ 600) do
     cutoff = DateTime.add(DateTime.utc_now(), -cutoff_seconds, :second)
+    now    = DateTime.utc_now()
 
     {count, _} =
       Transfer
@@ -82,7 +83,7 @@ defmodule BharatData.Transfers do
         set: [
           state: "failed",
           failure_reason: "expired: no tx submitted within 10 minutes",
-          updated_at: ^DateTime.utc_now()
+          updated_at: now
         ]
       )
 
@@ -91,6 +92,8 @@ defmodule BharatData.Transfers do
 
   # Reset a relay-failed transfer back to confirmed so relayer retries.
   def reset_for_retry(id) do
+    now = DateTime.utc_now()
+
     {count, _} =
       Transfer
       |> where([t], t.id == ^id and t.state == "failed")
@@ -99,7 +102,7 @@ defmodule BharatData.Transfers do
           state: "confirmed",
           relay_attempts: 0,
           failure_reason: nil,
-          updated_at: ^DateTime.utc_now()
+          updated_at: now
         ]
       )
 

@@ -6,6 +6,7 @@ erl_crash.dump
 .elixir_ls/
 
 # Secrets — copy *.example → * and fill in values
+.env
 config/dev.exs
 config/prod.exs
 config/runtime.exs

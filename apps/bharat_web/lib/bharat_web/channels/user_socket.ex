@@ -2,7 +2,6 @@ defmodule BharatWeb.UserSocket do
   use Phoenix.Socket
 
   channel "transfer:*",   BharatWeb.TransferChannel
-  channel "dashboard:*",  BharatWeb.DashboardChannel
 
   @impl true
   def connect(%{"token" => token}, socket, _connect_info) do

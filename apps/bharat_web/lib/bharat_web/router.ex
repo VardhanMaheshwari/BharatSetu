@@ -16,15 +16,6 @@ defmodule BharatWeb.Router do
     plug BharatWeb.Plugs.RequireKYC
   end
 
-  pipeline :browser do
-    plug :accepts, ["html"]
-    plug :fetch_session
-    plug :fetch_live_flash
-    plug :put_root_layout, html: {BharatWeb.Layouts, :root}
-    plug :protect_from_forgery
-    plug :put_secure_browser_headers
-  end
-
   # Public
   scope "/api/v1", BharatWeb do
     pipe_through [:api]
@@ -54,10 +45,5 @@ defmodule BharatWeb.Router do
     post   "/transfers/:id/retry",   TransferController, :retry
   end
 
-  # LiveView dashboard
-  scope "/", BharatWeb do
-    pipe_through :browser
 
-    live "/dashboard", DashboardLive, :index
-  end
 end

@@ -12,10 +12,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Providers>
           <nav className="navbar">
-            <span className="brand">
+            <a href="/" className="brand" style={{ textDecoration: "none" }}>
               <span className="brand-dot" />
               BharatSetu
-            </span>
+            </a>
             <div className="nav-links">
               <a href="/dashboard" className="nav-link">Dashboard</a>
               <a href="/bridge" className="nav-link">Bridge</a>

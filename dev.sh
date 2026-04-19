@@ -44,6 +44,18 @@ echo ""
 echo -e "${BOLD}${CYAN}  BharatSetu — Dev Environment${RESET}"
 sep
 
+# ── Load .env ─────────────────────────────────────────────────────────────────
+if [ -f "$ROOT/.env" ]; then
+  set -o allexport
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +o allexport
+  ok ".env loaded"
+else
+  warn ".env not found — copy .env.example to .env and fill in values"
+  warn "Phoenix will fail to start without RELAYER_PRIVATE_KEY and RPC URLs"
+fi
+
 # ── 1. PostgreSQL ─────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}[1/4] PostgreSQL${RESET}"
 if port_open 5432; then
