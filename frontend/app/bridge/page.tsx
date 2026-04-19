@@ -192,20 +192,20 @@ export default function BridgePage() {
       const transferIdBytes = `0x${data.id.replace(/-/g, "").padEnd(64, "0")}` as `0x${string}`;
 
       if (direction === "amoy_to_sepolia") {
-        const fees = { gas: BigInt(120000), maxFeePerGas: BigInt(50_000_000_000), maxPriorityFeePerGas: BigInt(30_000_000_000) };
+        const fees = { gas: BigInt(120000), maxFeePerGas: BigInt(100_000_000_000), maxPriorityFeePerGas: BigInt(50_000_000_000) };
         const approveTx = await sendTransactionAsync({
           to: tccs_token as `0x${string}`,
           data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: "approve", args: [lock_bridge as `0x${string}`, amountWei] }),
           ...fees,
         });
-        await publicClient!.waitForTransactionReceipt({ hash: approveTx });
+        await publicClient!.waitForTransactionReceipt({ hash: approveTx, confirmations: 1 });
 
         const txHash = await sendTransactionAsync({
           to: lock_bridge as `0x${string}`,
           data: encodeFunctionData({ abi: LOCK_BRIDGE_ABI, functionName: "lockTokens", args: [tccs_token as `0x${string}`, amountWei, transferIdBytes] }),
           ...fees,
         });
-        await publicClient!.waitForTransactionReceipt({ hash: txHash });
+        await publicClient!.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
         setTransfer((prev) => prev ? { ...prev, lock_tx_hash: txHash } : null);
         await confirmLock(data.id, txHash);
       } else {
@@ -215,7 +215,7 @@ export default function BridgePage() {
           data: encodeFunctionData({ abi: BURN_BRIDGE_ABI, functionName: "burnAndBridge", args: [amountWei, transferIdBytes] }),
           ...fees,
         });
-        await publicClient!.waitForTransactionReceipt({ hash: txHash });
+        await publicClient!.waitForTransactionReceipt({ hash: txHash, confirmations: 1 });
         setTransfer((prev) => prev ? { ...prev, lock_tx_hash: txHash } : null);
         await confirmLock(data.id, txHash);
       }
@@ -224,6 +224,7 @@ export default function BridgePage() {
       setTransfer(t);
     } catch (e) {
       console.error("[Bridge] ERROR", e);
+      localStorage.removeItem("activeTransferId");
       setErrorContext("tx");
       setError((e as Error).message);
       setStep("error");
@@ -598,7 +599,7 @@ export default function BridgePage() {
             </p>
           )}
           {errorContext === "tx" && <div style={{ marginBottom: "1.25rem" }} />}
-          <button className="btn-secondary" onClick={() => setStep(isLoggedIn() ? "form" : "login")}>
+          <button className="btn-secondary" onClick={() => { localStorage.removeItem("activeTransferId"); setTransfer(null); setTransferId(null); setStep(isLoggedIn() ? "form" : "login"); }}>
             Try Again
           </button>
         </div>
