@@ -10,7 +10,7 @@ defmodule BharatData.Repo.Migrations.CreateTokenRegistry do
       add :symbol, :string, null: false
       add :decimals, :integer, null: false
       add :max_transfer_bytes, :integer, null: false, default: 262144
-      add :supported_chains, {:array, :string}, null: false, default: [
+      add :supported_chains, {:array, :string}, null: false, default: []
       add :active, :boolean, null: false, default: true
       timestamps(type: :utc_datetime_usec)
     end
