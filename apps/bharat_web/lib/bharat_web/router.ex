@@ -33,6 +33,11 @@ defmodule BharatWeb.Router do
 
     get "/transfers",        TransferController, :index
     get "/transfers/:id",    TransferController, :show
+
+    get "/channels",                               ChannelController, :index
+    get "/channels/:id",                           ChannelController, :show
+    get "/channels/:id/tokens",                    ChannelController, :tokens
+    get "/channels/:id/tokens/lookup",             ChannelController, :token_lookup
   end
 
   # KYC-gated — write operations

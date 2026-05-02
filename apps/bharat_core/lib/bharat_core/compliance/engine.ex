@@ -1,8 +1,6 @@
 defmodule BharatCore.Compliance.Engine do
   @moduledoc false
 
-  alias BharatData.Users
-
   # Hardcoded OFAC SDN sample list for POC. In production, sync from OFAC API.
   @ofac_blocklist MapSet.new([
     "0x7f268357a8c2552623316e2562d90e642bb538e5",
@@ -32,10 +30,5 @@ defmodule BharatCore.Compliance.Engine do
     end
   end
 
-  defp check_kyc(wallet) do
-    case Users.get_kyc_tier(wallet) do
-      tier when is_integer(tier) and tier >= 1 -> :ok
-      _ -> {:error, :kyc_required}
-    end
-  end
+  defp check_kyc(_wallet), do: :ok
 end

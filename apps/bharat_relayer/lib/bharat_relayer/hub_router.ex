@@ -74,6 +74,7 @@ defmodule BharatRelayer.HubRouter do
       if length(updated) >= @threshold do
         Logger.info("HubRouter: threshold reached for #{transfer_id}")
         sigs = Enum.map(updated, fn {_, sig} -> sig end)
+        TransferServer.on_consensus_reached(transfer_id, sigs)
         trigger_execution(transfer_id, sigs)
         {:reply, :ok, Map.delete(approvals, transfer_id)}
       else

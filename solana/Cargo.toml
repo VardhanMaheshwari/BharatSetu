@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "programs/lock_vault",
+    "programs/mint_bridge",
+    "programs/nft_vault",
+    "programs/nft_mint_bridge",
+]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+

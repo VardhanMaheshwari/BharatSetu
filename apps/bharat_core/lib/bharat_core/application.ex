@@ -32,6 +32,12 @@ defmodule BharatCore.Application do
       # Anvil indexer — polls CBDCLocked events for cbdc_to_stablecoin (POC v2)
       BharatCore.Indexer.AnvilIndexer,
 
+      # Solana indexer — polls lock_vault + nft_vault program events (Channel/Zone arch)
+      BharatCore.Indexer.SolanaIndexer,
+
+      # Submits Anvil block hashes to BlockHashOracle on Amoy (MPT-proof path)
+      BharatCore.Indexer.SolanaBlockHashReporter,
+
       # Expires init transfers with no tx hash older than 10 min
       BharatCore.Bridge.InitTimeoutWorker,
 

@@ -43,6 +43,7 @@ kill_port() {
 echo ""
 echo -e "${BOLD}${CYAN}  BharatSetu — Dev Environment${RESET}"
 sep
+echo -e "  ${DIM}Includes POC v2: Anvil (CBDC) ↔ Polygon Amoy (Stablecoin)${RESET}"
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
 if [ -f "$ROOT/.env" ]; then
@@ -56,8 +57,50 @@ else
   warn "Phoenix will fail to start without RELAYER_PRIVATE_KEY and RPC URLs"
 fi
 
+# ── 0. Anvil (POC v2 — local CBDC chain) ─────────────────────────────────────
+echo -e "\n${BOLD}[0/5] Anvil (local CBDC ledger — POC v2)${RESET}"
+
+if port_open 8545; then
+  ok "Anvil already running on :8545"
+else
+  if command -v anvil &>/dev/null; then
+    info "Starting Anvil on :8545..."
+    anvil --port 8545 --chain-id 31337 > "$LOG_DIR/anvil.log" 2>&1 &
+    echo $! > "$LOG_DIR/anvil.pid"
+    sleep 2
+    if port_open 8545; then
+      ok "Anvil running on :8545  (logs: _dev_logs/anvil.log)"
+
+      # Deploy POC v2 contracts if CBDC_VAULT_CONTRACT not set
+      if [ -z "${CBDC_VAULT_CONTRACT:-}" ]; then
+        info "CBDC_VAULT_CONTRACT not set — deploying POC v2 contracts to Anvil..."
+        cd "$ROOT/contracts"
+        if forge script script/DeployPOCv2.s.sol:DeployCBDC \
+            --rpc-url http://localhost:8545 --broadcast \
+            --private-key "${RELAYER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}" \
+            > "$LOG_DIR/deploy_cbdc.log" 2>&1; then
+          ok "POC v2 CBDC contracts deployed (check _dev_logs/deploy_cbdc.log for addresses)"
+          warn "Set MOCK_CBDC_TOKEN and CBDC_VAULT_CONTRACT in .env, then run ./dev.sh again"
+        else
+          warn "POC v2 deploy failed — check _dev_logs/deploy_cbdc.log"
+          warn "Hint: set RELAYER_1_ADDRESS in .env before deploying"
+        fi
+        cd "$ROOT"
+      else
+        ok "CBDC_VAULT_CONTRACT set: ${CBDC_VAULT_CONTRACT}"
+      fi
+    else
+      warn "Anvil failed to start — POC v2 CBDC flows will not work"
+      warn "Install Foundry: curl -L https://foundry.paradigm.xyz | bash"
+    fi
+  else
+    warn "anvil not found — POC v2 CBDC flows disabled"
+    warn "Install Foundry: curl -L https://foundry.paradigm.xyz | bash && foundryup"
+  fi
+fi
+
 # ── 1. PostgreSQL ─────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}[1/4] PostgreSQL${RESET}"
+echo -e "\n${BOLD}[1/5] PostgreSQL${RESET}"
 if port_open 5432; then
   ok "PostgreSQL running on :5432"
 else
@@ -68,7 +111,7 @@ else
 fi
 
 # ── 2. Phoenix (kill existing, migrate, restart) ──────────────────────────────
-echo -e "\n${BOLD}[2/4] Phoenix backend${RESET}"
+echo -e "\n${BOLD}[2/5] Phoenix backend${RESET}"
 
 if port_open 4000; then
   info "Killing existing Phoenix on :4000..."
@@ -100,7 +143,7 @@ echo $! > "$LOG_DIR/phoenix.pid"
 wait_port 4000 "Phoenix" && ok "Phoenix running on :4000  (logs: _dev_logs/phoenix.log)"
 
 # ── 3. Next.js (kill existing, restart) ──────────────────────────────────────
-echo -e "\n${BOLD}[3/4] Next.js frontend${RESET}"
+echo -e "\n${BOLD}[3/5] Next.js frontend${RESET}"
 
 if port_open 3000; then
   info "Killing existing Next.js on :3000..."
@@ -121,7 +164,7 @@ echo $! > "$LOG_DIR/nextjs.pid"
 wait_port 3000 "Next.js" && ok "Next.js running on :3000   (logs: _dev_logs/nextjs.log)"
 
 # ── 4. Health checks ──────────────────────────────────────────────────────────
-echo -e "\n${BOLD}[4/4] Health checks${RESET}"
+echo -e "\n${BOLD}[4/5] Health checks${RESET}"
 sep
 sleep 1
 
@@ -155,13 +198,20 @@ echo -e "  ${CYAN}Bridge        ${RESET}http://localhost:3000/bridge"
 echo -e "  ${CYAN}History       ${RESET}http://localhost:3000/history"
 echo -e "  ${CYAN}Phoenix API   ${RESET}http://localhost:4000/api/v1"
 echo ""
-echo -e "  ${BOLD}Contracts${RESET}"
+echo -e "  ${BOLD}Contracts (POC v1)${RESET}"
 echo -e "  ${DIM}LockBridge (Amoy)    ${RESET}$LOCK"
 echo -e "  ${DIM}MintBridge (Sepolia) ${RESET}$MINT"
+echo ""
+echo -e "  ${BOLD}Contracts (POC v2 — CBDC Hub)${RESET}"
+echo -e "  ${DIM}Anvil chain          ${RESET}http://localhost:8545  (chain-id 31337)"
+echo -e "  ${DIM}MockCBDC (INRDC)     ${RESET}${MOCK_CBDC_TOKEN:-see .env}"
+echo -e "  ${DIM}CBDCVault            ${RESET}${CBDC_VAULT_CONTRACT:-see .env}"
+echo -e "  ${DIM}StablecoinBridge     ${RESET}${STABLECOIN_BRIDGE_CONTRACT:-see .env}"
 echo ""
 echo -e "  ${BOLD}Logs${RESET}"
 echo -e "  ${DIM}Phoenix   ${RESET}tail -f _dev_logs/phoenix.log"
 echo -e "  ${DIM}Next.js   ${RESET}tail -f _dev_logs/nextjs.log"
+echo -e "  ${DIM}Anvil     ${RESET}tail -f _dev_logs/anvil.log"
 echo ""
 echo -e "  ${BOLD}Quick actions${RESET}"
 echo -e "  ${DIM}Restart all   ${RESET}./dev.sh"

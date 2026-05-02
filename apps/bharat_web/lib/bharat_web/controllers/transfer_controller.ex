@@ -43,58 +43,71 @@ defmodule BharatWeb.TransferController do
   end
 
   defp do_create(conn, wallet, direction, params) do
-    attrs = %{
-      wallet:              wallet,
-      token_address:       params["token_address"],
-      amount:              parse_amount(params["amount"]),
-      direction:           direction,
-      compliance_status:   "approved",
-      instruction_payload: params["instruction_payload"],
-      asset_contract:      params["asset_contract"],
-      asset_token_id:      params["asset_token_id"] && String.to_integer(params["asset_token_id"])
-    }
+    amount = parse_amount(params["amount"])
+    if Decimal.compare(amount, Decimal.new(0)) != :gt do
+      conn |> put_status(:unprocessable_entity) |> json(%{error: "amount must be positive"})
+    else
+      attrs = %{
+        wallet:              wallet,
+        token_address:       params["token_address"],
+        amount:              amount,
+        direction:           direction,
+        compliance_status:   "approved",
+        instruction_payload: params["instruction_payload"],
+        asset_contract:      params["asset_contract"],
+        asset_token_id:      params["asset_token_id"] && String.to_integer(params["asset_token_id"]),
+        channel_id:          params["channel_id"],
+        cross_chain_id:      params["cross_chain_id"],
+        nft_metadata_uri:    params["nft_metadata_uri"],
+        nft_metadata_hash:   params["nft_metadata_hash"]
+      }
 
-    require Logger
-    Logger.info("[TransferController.create] wallet=#{wallet} token=#{attrs.token_address} amount=#{attrs.amount} direction=#{direction}")
+      require Logger
+      Logger.info("[TransferController.create] wallet=#{wallet} token=#{attrs.token_address} amount=#{attrs.amount} direction=#{direction}")
 
-    case TransferSupervisor.start_transfer(attrs) do
-      {:ok, id} ->
-        Logger.info("[TransferController.create] OK id=#{id}")
-        conn
-        |> put_status(:created)
-        |> json(%{data: %{id: id, state: "init"}})
+      case TransferSupervisor.start_transfer(attrs) do
+        {:ok, id} ->
+          Logger.info("[TransferController.create] OK id=#{id}")
+          conn
+          |> put_status(:created)
+          |> json(%{data: %{id: id, state: "init"}})
 
-      {:error, reason} ->
-        Logger.error("[TransferController.create] FAILED reason=#{inspect(reason)}")
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: inspect(reason)})
+        {:error, reason} ->
+          Logger.error("[TransferController.create] FAILED reason=#{inspect(reason)}")
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{error: inspect(reason)})
+      end
     end
   end
 
-  @cbdc_directions ~w(cbdc_to_stablecoin stablecoin_to_cbdc token_to_instruction asset_to_instruction)
+  @cbdc_directions ~w(cbdc_to_stablecoin stablecoin_to_cbdc token_to_instruction asset_to_instruction
+                      eth_to_sol sol_to_eth eth_nft_to_sol sol_nft_to_eth)
 
   defp maybe_check_compliance(direction, wallet) when direction in @cbdc_directions do
     BharatCore.Compliance.Engine.check(wallet)
   end
   defp maybe_check_compliance(_direction, _wallet), do: :ok
 
-  def confirm_lock(conn, %{"id" => id, "tx_hash" => tx_hash}) do
+  def confirm_lock(conn, %{"id" => id, "tx_hash" => tx_hash} = params) do
     wallet = conn.assigns.wallet
+    cross_chain_id = params["cross_chain_id"]
 
     require Logger
-    Logger.info("[TransferController.confirm_lock] id=#{id} wallet=#{wallet} tx=#{tx_hash}")
+    Logger.info("[TransferController.confirm_lock] id=#{id} wallet=#{wallet} tx=#{tx_hash} cross_chain_id=#{inspect(cross_chain_id)}")
 
     case Transfers.get(id, wallet) do
       nil ->
         Logger.error("[TransferController.confirm_lock] NOT FOUND id=#{id} wallet=#{wallet}")
-        # Log all transfers in DB for this wallet to help debug
         all = BharatData.Transfers.list_by_wallet(wallet)
         Logger.error("[TransferController.confirm_lock] DB has #{length(all)} transfers for wallet: #{Enum.map(all, & &1.id) |> inspect()}")
         conn |> put_status(:not_found) |> json(%{error: "not found"})
 
       transfer ->
         Logger.info("[TransferController.confirm_lock] FOUND state=#{transfer.state}")
+        if cross_chain_id do
+          Transfers.update_state(id, transfer.state, %{cross_chain_id: cross_chain_id})
+        end
         TransferServer.lock_submitted(id, tx_hash)
         json(conn, %{data: %{id: id, state: "locked"}})
     end
@@ -157,6 +170,13 @@ defmodule BharatWeb.TransferController do
       lock_tx_hash:        t.lock_tx_hash,
       mint_tx_hash:        t.mint_tx_hash,
       failure_reason:      t.failure_reason,
+      channel_id:          Map.get(t, :channel_id),
+      cross_chain_id:      Map.get(t, :cross_chain_id),
+      solana_signature:    Map.get(t, :solana_signature),
+      solana_mint_sig:     Map.get(t, :solana_mint_sig),
+      nft_metadata_uri:    Map.get(t, :nft_metadata_uri),
+      commit_tx_b:         Map.get(t, :commit_tx_b),
+      rollback_reason:     Map.get(t, :rollback_reason),
       inserted_at:         t.inserted_at
     }
   end

@@ -23,6 +23,21 @@ defmodule BharatData.IndexerCheckpoints do
     :ok
   end
 
+  # Solana signature watermarks (chain id 4 = lock_vault, 5 = nft_vault)
+  def get_last_sig(chain_id) when is_integer(chain_id) do
+    case Repo.get(IndexerCheckpoint, chain_id) do
+      nil        -> nil
+      checkpoint -> checkpoint.last_sig
+    end
+  end
+
+  def update_last_sig(chain_id, sig) when is_integer(chain_id) and is_binary(sig) do
+    IndexerCheckpoint
+    |> where([c], c.id == ^chain_id)
+    |> Repo.update_all(set: [last_sig: sig, updated_at: DateTime.utc_now()])
+    :ok
+  end
+
   defp chain_id("amoy"),    do: @amoy_id
   defp chain_id("sepolia"), do: @sepolia_id
   defp chain_id("anvil"),   do: @anvil_id

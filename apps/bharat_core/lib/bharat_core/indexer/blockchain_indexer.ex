@@ -10,7 +10,7 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
 
   alias BharatCore.Indexer.EventParser
   alias BharatCore.Bridge.TransferServer
-  alias BharatData.{Transfers, IndexerCheckpoints}
+  alias BharatData.IndexerCheckpoints
   alias BharatAdapters.Blockchain.Contract
 
   @confirmation_depth Application.compile_env(:bharat_core, :confirmation_depth, 3)
@@ -47,7 +47,7 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
     case Contract.current_block_number() do
       {:ok, latest} when latest > state.current_block ->
         from = state.current_block + 1
-        to   = latest
+        to   = min(latest, from + @backfill_batch_size - 1)
 
         state =
           case Contract.get_logs(from, to) do
@@ -66,9 +66,9 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
               state
           end
 
-        state = %{state | current_block: latest}
-        state = promote_confirmed(state, latest)
-        IndexerCheckpoints.update_last_block(latest)
+        state = %{state | current_block: to}
+        state = promote_confirmed(state, to)
+        IndexerCheckpoints.update_last_block(to)
         state
 
       {:ok, _same} ->

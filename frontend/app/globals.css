@@ -465,7 +465,8 @@ body > * { position: relative; z-index: 1; }
   color: var(--text);
 }
 
-.step-item.inactive .step-title { color: var(--muted); }
+.step-item.inactive .step-title,
+.step-item.pending .step-title { color: var(--muted); }
 
 .step-desc {
   font-size: 0.78rem;

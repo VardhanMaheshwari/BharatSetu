@@ -7,9 +7,9 @@ defmodule BharatRelayer.Application do
       # POC v1 — amoy↔sepolia single relayer
       BharatRelayer.Worker,
       # POC v2 — block hash reporters (one per relayer address, threshold=2-of-3 in oracle)
-      {BharatRelayer.BlockHashReporter, name: BharatRelayer.BlockHashReporterR1},
-      {BharatRelayer.BlockHashReporter, name: BharatRelayer.BlockHashReporterR2},
-      {BharatRelayer.BlockHashReporter, name: BharatRelayer.BlockHashReporterR3},
+      Supervisor.child_spec({BharatRelayer.BlockHashReporter, name: BharatRelayer.BlockHashReporterR1}, id: :block_hash_reporter_r1),
+      Supervisor.child_spec({BharatRelayer.BlockHashReporter, name: BharatRelayer.BlockHashReporterR2}, id: :block_hash_reporter_r2),
+      Supervisor.child_spec({BharatRelayer.BlockHashReporter, name: BharatRelayer.BlockHashReporterR3}, id: :block_hash_reporter_r3),
       # POC v2 — proof submitters (any one succeeds, others get NonceAlreadyUsed)
       BharatRelayer.V2WorkerR1,
       BharatRelayer.V2WorkerR2,

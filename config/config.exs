@@ -10,7 +10,7 @@ config :bharat_web, BharatWeb.Endpoint,
   live_view: [signing_salt: "bharat_setu_lv"]
 
 config :bharat_core,
-  confirmation_depth: 12
+  confirmation_depth: 3
 
 config :bharat_adapters,
   kyc_adapter: BharatAdapters.KYC.MockClient,

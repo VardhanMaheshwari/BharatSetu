@@ -104,6 +104,22 @@ defmodule BharatAdapters.Blockchain.Contract do
     rpc(sepolia_url, "eth_getLogs", [params])
   end
 
+  # Get EthVault TokenLocked events from Sepolia (ETH→SOL channel)
+  # keccak256("TokenLocked(address,address,uint256,bytes32,bytes32,bytes,uint256)")
+  @eth_vault_locked_topic "0x91ddb2b87ff5745539ec0f248ea8515ca55212d12df38a53ef45ccf671c25ba6"
+
+  def get_eth_vault_logs(from_block, to_block) do
+    params = %{
+      fromBlock: "0x" <> Integer.to_string(from_block, 16),
+      toBlock:   "0x" <> Integer.to_string(to_block, 16),
+      address:   eth_vault_address(),
+      topics:    [@eth_vault_locked_topic]
+    }
+    sepolia_url = Application.get_env(:bharat_core, :sepolia_http_url) ||
+                  raise "sepolia_http_url not configured"
+    rpc(sepolia_url, "eth_getLogs", [params])
+  end
+
   # Get current block number from Sepolia
   def sepolia_block_number do
     sepolia_url = Application.get_env(:bharat_core, :sepolia_http_url) ||
@@ -135,6 +151,33 @@ defmodule BharatAdapters.Blockchain.Contract do
     else
       {:error, reason} ->
         Logger.error("unlock_on_amoy failed: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  # ── Channel/Zone: EthVault + NFTVault rollback ────────────────────────────
+
+  # Submit claimTimeout(crossChainId) on EthVault (Sepolia) after lock timeout.
+  def claim_timeout_eth_vault(cross_chain_id_hex, _lock_tx_hash \\ nil) do
+    calldata = encode_call(
+      "claimTimeout(bytes32)",
+      [bytes32_hex(cross_chain_id_hex)]
+    )
+
+    relayer_key  = relayer_private_key()
+    vault_addr   = eth_vault_address()
+    sepolia_url  = Application.get_env(:bharat_core, :sepolia_http_url) ||
+                   raise "sepolia_http_url not configured"
+
+    with {:ok, nonce}     <- eth_get_nonce(sepolia_url, relayer_address(relayer_key)),
+         {:ok, gas_price} <- eth_gas_price(sepolia_url),
+         {:ok, signed}    <- sign_tx(relayer_key, vault_addr, calldata, nonce, gas_price),
+         {:ok, tx_hash}   <- eth_send_raw(sepolia_url, signed) do
+      Logger.info("claimTimeout EthVault ccid=#{cross_chain_id_hex} tx=#{tx_hash}")
+      {:ok, tx_hash}
+    else
+      {:error, reason} ->
+        Logger.error("claimTimeout EthVault failed ccid=#{cross_chain_id_hex}: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -441,7 +484,7 @@ defmodule BharatAdapters.Blockchain.Contract do
   # bytes32 from binary
   defp bytes32(b) when is_binary(b) and byte_size(b) == 32, do: b
   defp bytes32(s) when is_binary(s) do
-    hex = String.trim_leading(s, "0x")
+    hex = s |> String.trim_leading("0x") |> String.replace("-", "")
     raw = Base.decode16!(hex, case: :mixed)
     pad = max(0, 32 - byte_size(raw))
     :binary.copy(<<0>>, pad) <> raw
@@ -593,6 +636,11 @@ defmodule BharatAdapters.Blockchain.Contract do
   defp block_hash_oracle_address do
     Application.get_env(:bharat_core, :block_hash_oracle_contract) ||
       raise "block_hash_oracle_contract not configured"
+  end
+
+  defp eth_vault_address do
+    Application.get_env(:bharat_core, :eth_vault_contract) ||
+      raise "eth_vault_contract not configured"
   end
 
   defp anvil_http_url do

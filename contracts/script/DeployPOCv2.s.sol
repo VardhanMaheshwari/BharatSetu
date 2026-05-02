@@ -8,6 +8,8 @@ import {StablecoinBridge} from "../src/StablecoinBridge.sol";
 import {BlockHashOracle} from "../src/BlockHashOracle.sol";
 import {MockAsset} from "../src/MockAsset.sol";
 import {AssetVault} from "../src/AssetVault.sol";
+import {EthVault} from "../src/EthVault.sol";
+import {NFTVault} from "../src/NFTVault.sol";
 
 bytes32 constant SALT = keccak256("bharatsetu.v2");
 
@@ -122,6 +124,31 @@ contract MintTestAsset is Script {
         vm.stopBroadcast();
 
         console.log("Minted asset tokenId=%s (BOND) to %s", tokenId, recipient);
+    }
+}
+
+/// Deploy EthVault + NFTVault on Ethereum/Sepolia (Channel/Zone ETH↔SOL arch):
+///   forge script script/DeployPOCv2.s.sol:DeployEthChannel --rpc-url sepolia --broadcast
+///
+/// EthVault: ERC20 escrow for ETH→SOL token bridge (lock + unlock + claimTimeout).
+/// NFTVault:  ERC721 escrow for ETH→SOL NFT bridge (lockNFT + unlockNFT + claimTimeout).
+/// After deploy, set ETH_VAULT_CONTRACT and NFT_VAULT_CONTRACT in .env.
+contract DeployEthChannel is Script {
+    function run() external {
+        address relayer = vm.envAddress("RELAYER_1_ADDRESS");
+
+        vm.startBroadcast();
+        EthVault ethVault = new EthVault{salt: SALT}(relayer);
+        NFTVault nftVault = new NFTVault{salt: SALT}(relayer);
+        vm.stopBroadcast();
+
+        console.log("EthVault (Sepolia):", address(ethVault));
+        console.log("NFTVault (Sepolia):", address(nftVault));
+        console.log("Relayer:", relayer);
+        console.log("");
+        console.log("Add to .env:");
+        console.log("  ETH_VAULT_CONTRACT=%s", address(ethVault));
+        console.log("  NFT_VAULT_CONTRACT=%s", address(nftVault));
     }
 }
 

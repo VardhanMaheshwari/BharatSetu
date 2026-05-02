@@ -63,6 +63,16 @@ defmodule BharatData.Transfers do
     |> Repo.all()
   end
 
+  # Returns eth_to_sol transfers in hub_recorded/validating state ready for Solana mint.
+  # Bypasses the multi-sig consensus path; Solana MintBridge has its own idempotency.
+  def get_eth_to_sol_pending_mint(limit \\ 50) do
+    Transfer
+    |> where([t], t.direction == "eth_to_sol" and t.state in ["hub_recorded", "validating", "confirmed"] and t.relay_attempts < 3)
+    |> order_by([t], asc: t.updated_at)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
   # Idempotency check: has this nonce_hash already been minted?
   def already_minted?(nonce_hash) do
     Transfer
@@ -88,6 +98,49 @@ defmodule BharatData.Transfers do
       )
 
     count
+  end
+
+  # Channel-aware queries
+
+  def get_by_cross_chain_id(cross_chain_id) do
+    Transfer |> where([t], t.cross_chain_id == ^cross_chain_id) |> Repo.one()
+  end
+
+  def get_hub_recorded(channel_id, limit \\ 50) do
+    Transfer
+    |> where([t], t.channel_id == ^channel_id and t.state == "hub_recorded")
+    |> order_by([t], asc: t.updated_at)
+    |> limit(^limit)
+    |> Repo.all()
+  end
+
+  # Transfers past their timeout that are not yet completed/rolled_back.
+  def get_timed_out do
+    now = DateTime.utc_now()
+    terminal = ["completed", "rolled_back", "failed"]
+    Transfer
+    |> where([t], not is_nil(t.timeout_at) and t.timeout_at < ^now and t.state not in ^terminal)
+    |> Repo.all()
+  end
+
+  def mark_rolling_back(id, reason) do
+    update_state(id, "rolling_back", %{rollback_reason: reason})
+  end
+
+  def mark_rolled_back(id, rollback_tx_a \\ nil, rollback_tx_b \\ nil) do
+    update_state(id, "rolled_back", %{rollback_tx_a: rollback_tx_a, rollback_tx_b: rollback_tx_b})
+  end
+
+  def commit_a(id, commit_tx_a) do
+    update_state(id, "committed_a", %{commit_tx_a: commit_tx_a})
+  end
+
+  def commit_b(id, commit_tx_b) do
+    update_state(id, "committed_b", %{commit_tx_b: commit_tx_b})
+  end
+
+  def finalize(id, hub_state_hash) do
+    update_state(id, "completed", %{hub_state_hash: hub_state_hash})
   end
 
   # Reset a relay-failed transfer back to confirmed so relayer retries.

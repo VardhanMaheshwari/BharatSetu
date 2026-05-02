@@ -1,8 +1,9 @@
 defmodule BharatCore.Indexer.SepoliaIndexer do
   @moduledoc """
-  Sepolia event indexer for the Sepolia→Amoy return bridge.
-  Polls Sepolia for TokensBurned events from MintBridge every 3s.
-  On confirmed burn: notifies TransferServer to proceed with unlock on Amoy.
+  Sepolia event indexer.
+  Polls Sepolia every 3s for:
+  - TokensBurned (MintBridge)  → Sepolia→Amoy return flow
+  - TokenLocked  (EthVault)    → ETH→SOL channel flow
   """
 
   use GenServer
@@ -12,6 +13,17 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
   alias BharatCore.Bridge.TransferServer
   alias BharatData.{Transfers, IndexerCheckpoints}
   alias BharatAdapters.Blockchain.Contract
+
+  defp resolve_transfer_id_for_eth_vault(event) do
+    # crossChainId is keccak256(transferId+nonce), stored in DB as cross_chain_id
+    case Transfers.get_by_cross_chain_id(event.cross_chain_id) do
+      nil ->
+        Logger.warning("[SepoliaIndexer] no transfer found for cross_chain_id=#{event.cross_chain_id}")
+        nil
+      t ->
+        t.id
+    end
+  end
 
   @confirmation_depth Application.compile_env(:bharat_core, :confirmation_depth, 3)
   @backfill_batch_size 9
@@ -48,7 +60,7 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
     case Contract.sepolia_block_number() do
       {:ok, latest} when latest > state.current_block ->
         from = state.current_block + 1
-        to   = latest
+        to   = min(latest, from + @backfill_batch_size - 1)
 
         state =
           case Contract.get_sepolia_logs(from, to) do
@@ -56,20 +68,36 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
               Enum.reduce(logs, state, fn raw_log, acc ->
                 case EventParser.parse(raw_log) do
                   {:tokens_burned, event} ->
-                    Logger.debug("TokensBurned block=#{event.block_number} transfer=#{event.transfer_id}")
+                    Logger.debug("[SepoliaIndexer] TokensBurned block=#{event.block_number} transfer=#{event.transfer_id}")
                     put_in(acc.pending[{event.nonce_hash, event.tx_hash}], {event, event.block_number})
                   _ -> acc
                 end
               end)
-
             {:error, reason} ->
-              Logger.error("Sepolia eth_getLogs #{from}..#{to} failed: #{inspect(reason)}")
+              Logger.error("[SepoliaIndexer] MintBridge get_logs #{from}..#{to} failed: #{inspect(reason)}")
               state
           end
 
-        state = %{state | current_block: latest}
-        state = promote_confirmed(state, latest)
-        IndexerCheckpoints.update_last_block(latest, @chain)
+        # Also poll EthVault for ETH→SOL locks
+        state =
+          case Contract.get_eth_vault_logs(from, to) do
+            {:ok, logs} ->
+              Enum.reduce(logs, state, fn raw_log, acc ->
+                case EventParser.parse(raw_log) do
+                  {:eth_vault_locked, event} ->
+                    Logger.info("[SepoliaIndexer] EthVault TokenLocked block=#{event.block_number} transfer=#{event.transfer_id} amount=#{event.amount}")
+                    put_in(acc.pending[{event.transfer_id, event.tx_hash}], {event, event.block_number})
+                  _ -> acc
+                end
+              end)
+            {:error, reason} ->
+              Logger.error("[SepoliaIndexer] EthVault get_logs #{from}..#{to} failed: #{inspect(reason)}")
+              state
+          end
+
+        state = %{state | current_block: to}
+        state = promote_confirmed(state, to)
+        IndexerCheckpoints.update_last_block(to, @chain)
         state
 
       {:ok, _same} -> state
@@ -118,14 +146,38 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
         Enum.each(logs, fn raw_log ->
           case EventParser.parse(raw_log) do
             {:tokens_burned, event} ->
-              Logger.info("Sepolia backfill: confirming return transfer #{event.transfer_id}")
+              Logger.info("[SepoliaIndexer] backfill burn transfer=#{event.transfer_id}")
               TransferServer.on_confirmed(event.transfer_id, event.block_number)
             _ -> :skip
           end
         end)
-
       {:error, reason} ->
-        Logger.error("Sepolia backfill get_logs #{from}..#{batch_to} failed: #{inspect(reason)}")
+        Logger.error("[SepoliaIndexer] backfill MintBridge #{from}..#{batch_to} failed: #{inspect(reason)}")
+    end
+
+    case Contract.get_eth_vault_logs(from, batch_to) do
+      {:ok, logs} ->
+        Enum.each(logs, fn raw_log ->
+          case EventParser.parse(raw_log) do
+            {:eth_vault_locked, event} ->
+              case resolve_transfer_id_for_eth_vault(event) do
+                nil -> :skip
+                transfer_id ->
+                  Logger.info("[SepoliaIndexer] backfill eth_vault_locked transfer=#{transfer_id} dest=#{event.dest_wallet}")
+                  if event.dest_wallet do
+                    Transfers.update_state(transfer_id, "locked", %{
+                      lock_tx_hash: event.tx_hash,
+                      instruction_payload: event.dest_wallet
+                    })
+                  end
+                  TransferServer.lock_submitted(transfer_id, event.tx_hash)
+                  TransferServer.on_confirmed(transfer_id, event.block_number)
+              end
+            _ -> :skip
+          end
+        end)
+      {:error, reason} ->
+        Logger.error("[SepoliaIndexer] backfill EthVault #{from}..#{batch_to} failed: #{inspect(reason)}")
     end
 
     backfill_range(batch_to + 1, to)
@@ -140,8 +192,29 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
       end)
 
     Enum.each(to_confirm, fn {_k, {event, block}} ->
-      Logger.info("Sepolia confirmed: return transfer #{event.transfer_id} at block #{block}")
-      TransferServer.on_confirmed(event.transfer_id, block)
+      cond do
+        Map.has_key?(event, :cross_chain_id) ->
+          # ETH→SOL: look up DB transfer by cross_chain_id (keccak256 key stored at confirmLock)
+          case resolve_transfer_id_for_eth_vault(event) do
+            nil -> :skip
+            transfer_id ->
+              Logger.info("[SepoliaIndexer] EthVault lock confirmed transfer=#{transfer_id} block=#{block} dest=#{event.dest_wallet}")
+              # Store dest Solana wallet in instruction_payload so relayer can mint to correct address
+              if event.dest_wallet do
+                Transfers.update_state(transfer_id, "locked", %{
+                  lock_tx_hash: event.tx_hash,
+                  instruction_payload: event.dest_wallet
+                })
+              end
+              TransferServer.lock_submitted(transfer_id, event.tx_hash)
+              TransferServer.on_confirmed(transfer_id, block)
+          end
+
+        true ->
+          # Sepolia→Amoy: MintBridge burn confirmed
+          Logger.info("[SepoliaIndexer] MintBridge burn confirmed transfer=#{event.transfer_id} block=#{block}")
+          TransferServer.on_confirmed(event.transfer_id, block)
+      end
     end)
 
     %{state | pending: Map.new(still_pending)}

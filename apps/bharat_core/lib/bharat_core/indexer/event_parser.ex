@@ -17,6 +17,9 @@ defmodule BharatCore.Indexer.EventParser do
 
     AssetLocked(address,address,uint256,bytes32,bytes32,bytes) — AssetVault (POC v2)
     = 0xfebbc5c036aa2aa6ef382b492327c08033496d19d1286f732900cb5d618a70d4
+
+    TokenLocked(address,address,uint256,bytes32,bytes32,bytes,uint256) — EthVault (ETH→SOL)
+    = 0x91ddb2b87ff5745539ec0f248ea8515ca55212d12df38a53ef45ccf671c25ba6
   """
 
   # keccak256("TokensLocked(address,address,uint256,bytes32,bytes32)")
@@ -34,11 +37,46 @@ defmodule BharatCore.Indexer.EventParser do
   # keccak256("AssetLocked(address,address,uint256,bytes32,bytes32,bytes)") — AssetVault
   @asset_locked_topic "0xfebbc5c036aa2aa6ef382b492327c08033496d19d1286f732900cb5d618a70d4"
 
+  # keccak256("TokenLocked(address,address,uint256,bytes32,bytes32,bytes,uint256)") — EthVault
+  @eth_vault_locked_topic "0x91ddb2b87ff5745539ec0f248ea8515ca55212d12df38a53ef45ccf671c25ba6"
+
   def tokens_locked_topic, do: @tokens_locked_topic
   def tokens_burned_topic, do: @tokens_burned_topic
   def cbdc_locked_topic, do: @cbdc_locked_topic
   def stablecoin_burned_topic, do: @stablecoin_burned_topic
   def asset_locked_topic, do: @asset_locked_topic
+  def eth_vault_locked_topic, do: @eth_vault_locked_topic
+
+  # ETH→SOL: TokenLocked from EthVault (Sepolia)
+  # event TokenLocked(address indexed sender, address indexed token, uint256 amount,
+  #                   bytes32 crossChainId, bytes32 nonceHash, bytes destWallet, uint256 timeoutAt)
+  # data layout: amount(32) + crossChainId(32) + nonceHash(32) + destWallet_offset(32) + timeoutAt(32)
+  #              + destWallet_len(32) + destWallet_data(padded)
+  def parse(%{"topics" => [@eth_vault_locked_topic | _rest]} = log) do
+    data = log["data"] || "0x"
+    # crossChainId — bytes 32..63 of data
+    cross_chain_id_hex = "0x" <> decode_bytes32_hex(data, 32)
+    transfer_id = cross_chain_id_hex
+
+    # destWallet: dynamic bytes at word offset 96 (word 3 = offset pointer)
+    # actual data starts at the offset encoded at word 3
+    dest_wallet = decode_dest_wallet(data)
+
+    event = %{
+      sender:        decode_address(Enum.at(log["topics"], 1)),
+      token_address: decode_address(Enum.at(log["topics"], 2)),
+      amount:        decode_uint256(data, 0),
+      cross_chain_id: cross_chain_id_hex,
+      transfer_id:   transfer_id,
+      dest_wallet:   dest_wallet,
+      tx_hash:       log["transactionHash"],
+      block_number:  decode_block_number(log["blockNumber"])
+    }
+
+    require Logger
+    Logger.info("[EventParser] eth_vault_locked transfer_id=#{transfer_id} amount=#{event.amount} dest=#{dest_wallet} tx=#{event.tx_hash}")
+    {:eth_vault_locked, event}
+  end
 
   # Amoy→Sepolia: TokensLocked from LockBridge
   def parse(%{"topics" => [@tokens_locked_topic | _rest]} = log) do
@@ -185,6 +223,48 @@ defmodule BharatCore.Indexer.EventParser do
       "0x" <> String.slice(hex, (data_offset + 32) * 2, len * 2)
     end
   end
+
+  # Decode destWallet from EthVault TokenLocked event data.
+  # destWallet is `bytes` at ABI word 3 (byte offset 96).
+  # The frontend encodes Solana pubkey as 32-byte left-padded hex, so we return base58.
+  defp decode_dest_wallet("0x" <> hex) do
+    # Word 3 (bytes 96..127) = offset pointer to length+data section
+    offset = String.slice(hex, 192, 64) |> String.to_integer(16)
+    # Length at that offset (bytes)
+    len = String.slice(hex, offset * 2, 64) |> String.to_integer(16)
+
+    if len == 0 do
+      nil
+    else
+      raw = String.slice(hex, (offset + 32) * 2, len * 2)
+      # Solana pubkey is 32 bytes, possibly left-padded to 32/64 bytes
+      pubkey_hex =
+        cond do
+          len == 32 -> raw
+          len == 64 -> String.slice(raw, 64, 64)  # right 32 bytes if 64-byte padded
+          len > 32  -> String.slice(raw, (len - 32) * 2, 64)
+          true      -> String.pad_leading(raw, 64, "0")
+        end
+
+      bytes58_encode(pubkey_hex)
+    end
+  end
+
+  @b58_alphabet ~c"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+  defp bytes58_encode(hex) do
+    bytes = Base.decode16!(hex, case: :lower)
+    n = :binary.decode_unsigned(bytes)
+    leading_zeros = count_leading_zero_bytes(bytes)
+    encoded = do_encode58(n, [])
+    String.duplicate("1", leading_zeros) <> :erlang.list_to_binary(encoded)
+  end
+
+  defp do_encode58(0, acc), do: acc
+  defp do_encode58(n, acc), do: do_encode58(div(n, 58), [Enum.at(@b58_alphabet, rem(n, 58)) | acc])
+
+  defp count_leading_zero_bytes(<<0, rest::binary>>), do: 1 + count_leading_zero_bytes(rest)
+  defp count_leading_zero_bytes(_), do: 0
 
   defp decode_block_number("0x" <> hex), do: String.to_integer(hex, 16)
   defp decode_block_number(n) when is_integer(n), do: n

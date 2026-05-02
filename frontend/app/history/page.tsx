@@ -6,25 +6,69 @@ import { listTransfers, Transfer } from "../../lib/api";
 type Filter = "all" | "active" | "completed" | "failed";
 
 const STATE_META: Record<string, { label: string; cls: string }> = {
-  init:      { label: "Awaiting Tx",      cls: "init" },
-  locked:    { label: "Lock Submitted",   cls: "locked" },
-  confirmed: { label: "Confirming",       cls: "confirmed" },
-  minted:    { label: "Minted",           cls: "minted" },
-  completed: { label: "Completed",        cls: "completed" },
-  failed:    { label: "Failed",           cls: "failed" },
+  init:          { label: "Awaiting Tx",      cls: "init" },
+  locked:        { label: "Lock Submitted",   cls: "locked" },
+  confirmed:     { label: "Confirming",       cls: "confirmed" },
+  hub_recorded:  { label: "Hub Recorded",     cls: "confirmed" },
+  validating:    { label: "Validating",       cls: "confirmed" },
+  consensus_b:   { label: "Consensus Reached",cls: "confirmed" },
+  minting_b:     { label: "Minting",          cls: "minted" },
+  committed_b:   { label: "Committed",        cls: "minted" },
+  committed_a:   { label: "Finalizing",       cls: "minted" },
+  minted:        { label: "Minted",           cls: "minted" },
+  completed:     { label: "Completed",        cls: "completed" },
+  failed:        { label: "Failed",           cls: "failed" },
+  rolled_back:   { label: "Rolled Back",      cls: "failed" },
+  rolling_back:  { label: "Rolling Back",     cls: "failed" },
 };
 
-const ACTIVE_STATES = ["init", "locked", "confirmed", "minted"];
+const ACTIVE_STATES = [
+  "init", "locked", "confirmed",
+  "hub_recorded", "validating", "consensus_b", "minting_b", "committed_b", "committed_a",
+  "minted",
+];
 
-const EXPLORER: Record<string, { lock: string; mint: string }> = {
-  amoy_to_sepolia: {
-    lock: "https://amoy.polygonscan.com/tx/",
-    mint: "https://sepolia.etherscan.io/tx/",
-  },
-  sepolia_to_amoy: {
-    lock: "https://sepolia.etherscan.io/tx/",
-    mint: "https://amoy.polygonscan.com/tx/",
-  },
+const DIR_LABEL: Record<string, string> = {
+  amoy_to_sepolia:    "Amoy → Sepolia",
+  sepolia_to_amoy:    "Sepolia → Amoy",
+  eth_to_sol:         "ETH → Solana",
+  sol_to_eth:         "Solana → ETH",
+  eth_nft_to_sol:     "ETH NFT → Solana",
+  sol_nft_to_eth:     "Solana NFT → ETH",
+  cbdc_to_stablecoin: "CBDC → Stablecoin",
+  token_to_instruction: "Token → Instruction",
+  asset_to_instruction: "Asset → Instruction",
+};
+
+const TX_LABELS: Record<string, { lock: string; mint: string }> = {
+  amoy_to_sepolia:    { lock: "Lock",   mint: "Mint"     },
+  sepolia_to_amoy:    { lock: "Burn",   mint: "Unlock"   },
+  eth_to_sol:         { lock: "Lock",   mint: "Mint"     },
+  sol_to_eth:         { lock: "Burn",   mint: "Unlock"   },
+  eth_nft_to_sol:     { lock: "Lock",   mint: "Mint"     },
+  sol_nft_to_eth:     { lock: "Burn",   mint: "Unlock"   },
+  cbdc_to_stablecoin: { lock: "Lock",   mint: "Mint"     },
+  token_to_instruction: { lock: "Lock", mint: "Attest"   },
+  asset_to_instruction: { lock: "Lock", mint: "Attest"   },
+};
+
+const SOL_EXPLORER = "https://explorer.solana.com/tx/";
+const SOL_DEVNET_SUFFIX = "?cluster=devnet";
+
+function solTxUrl(sig: string) {
+  return `${SOL_EXPLORER}${sig}${SOL_DEVNET_SUFFIX}`;
+}
+
+const EXPLORER: Record<string, { lock: (h: string) => string; mint: (h: string) => string }> = {
+  amoy_to_sepolia:    { lock: (h) => `https://amoy.polygonscan.com/tx/${h}`,   mint: (h) => `https://sepolia.etherscan.io/tx/${h}` },
+  sepolia_to_amoy:    { lock: (h) => `https://sepolia.etherscan.io/tx/${h}`,   mint: (h) => `https://amoy.polygonscan.com/tx/${h}` },
+  eth_to_sol:         { lock: (h) => `https://sepolia.etherscan.io/tx/${h}`,   mint: (h) => solTxUrl(h) },
+  sol_to_eth:         { lock: (h) => solTxUrl(h),                               mint: (h) => `https://sepolia.etherscan.io/tx/${h}` },
+  eth_nft_to_sol:     { lock: (h) => `https://sepolia.etherscan.io/tx/${h}`,   mint: (h) => solTxUrl(h) },
+  sol_nft_to_eth:     { lock: (h) => solTxUrl(h),                               mint: (h) => `https://sepolia.etherscan.io/tx/${h}` },
+  cbdc_to_stablecoin: { lock: (h) => `https://amoy.polygonscan.com/tx/${h}`,   mint: (h) => `https://amoy.polygonscan.com/tx/${h}` },
+  token_to_instruction: { lock: (h) => `https://amoy.polygonscan.com/tx/${h}`, mint: (h) => `https://amoy.polygonscan.com/tx/${h}` },
+  asset_to_instruction: { lock: (h) => `https://amoy.polygonscan.com/tx/${h}`, mint: (h) => `https://amoy.polygonscan.com/tx/${h}` },
 };
 
 function truncate(s: string, n = 8) {
@@ -132,8 +176,9 @@ export default function HistoryPage() {
             </thead>
             <tbody>
               {filtered.map((t) => {
-                const meta = STATE_META[t.state] ?? { label: t.state, cls: "init" };
-                const ex   = EXPLORER[t.direction] ?? EXPLORER.amoy_to_sepolia;
+                const meta   = STATE_META[t.state] ?? { label: t.state, cls: "confirmed" };
+                const ex     = EXPLORER[t.direction] ?? EXPLORER.amoy_to_sepolia;
+                const txLbl  = TX_LABELS[t.direction] ?? TX_LABELS.amoy_to_sepolia;
                 const isCopied = copiedId === t.id;
                 return (
                   <tr key={t.id}>
@@ -151,14 +196,10 @@ export default function HistoryPage() {
                       </span>
                     </td>
                     <td style={{ fontSize: "0.78rem", color: "var(--muted)", whiteSpace: "nowrap" }}>
-                      {t.direction === "amoy_to_sepolia" ? "Amoy → Sepolia" : "Sepolia → Amoy"}
+                      {DIR_LABEL[t.direction] ?? t.direction}
                     </td>
                     <td style={{ fontWeight: 600, fontSize: "0.88rem" }}>
                       {t.amount}
-                      {" "}
-                      <span style={{ color: "var(--muted)", fontSize: "0.72rem" }}>
-                        {t.direction === "amoy_to_sepolia" ? "tCCS" : "wCCC"}
-                      </span>
                     </td>
                     <td>
                       <span className={`badge ${meta.cls}`}>{meta.label}</span>
@@ -174,15 +215,15 @@ export default function HistoryPage() {
                     <td style={{ fontSize: "0.75rem" }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {t.lock_tx_hash && (
-                          <a href={`${ex.lock}${t.lock_tx_hash}`} target="_blank" rel="noreferrer"
+                          <a href={ex.lock(t.lock_tx_hash)} target="_blank" rel="noreferrer"
                             style={{ color: "var(--primary)" }}>
-                            {t.direction === "amoy_to_sepolia" ? "Lock" : "Burn"} ↗
+                            {txLbl.lock} ↗
                           </a>
                         )}
                         {t.mint_tx_hash && (
-                          <a href={`${ex.mint}${t.mint_tx_hash}`} target="_blank" rel="noreferrer"
+                          <a href={ex.mint(t.mint_tx_hash)} target="_blank" rel="noreferrer"
                             style={{ color: "var(--blue)" }}>
-                            {t.direction === "amoy_to_sepolia" ? "Mint" : "Unlock"} ↗
+                            {txLbl.mint} ↗
                           </a>
                         )}
                         {!t.lock_tx_hash && !t.mint_tx_hash && (

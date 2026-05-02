@@ -19,6 +19,7 @@ defmodule BharatRelayer.Worker do
   require Logger
 
   alias BharatAdapters.Blockchain.Contract
+  alias BharatAdapters.Solana.Client, as: SolanaClient
   alias BharatData.Transfers
   alias BharatCore.Bridge.TransferServer
 
@@ -43,12 +44,14 @@ defmodule BharatRelayer.Worker do
 
   defp process_confirmed_transfers do
     confirmed = Transfers.get_confirmed_pending_relay()
+    eth_to_sol = Transfers.get_eth_to_sol_pending_mint()
 
-    if confirmed != [] do
-      Logger.info("Relayer: found #{length(confirmed)} confirmed transfer(s) to mint")
+    all = Enum.uniq_by(confirmed ++ eth_to_sol, & &1.id)
+    if all != [] do
+      Logger.info("Relayer: found #{length(confirmed)} confirmed + #{length(eth_to_sol)} eth_to_sol transfer(s) to mint")
     end
 
-    Enum.each(confirmed, &relay_transfer/1)
+    Enum.each(all, &relay_transfer/1)
   end
 
   defp relay_transfer(transfer) do
@@ -72,6 +75,18 @@ defmodule BharatRelayer.Worker do
         "sepolia_to_amoy" ->
           Contract.unlock_on_amoy(transfer.wallet, transfer.token_address,
                                   transfer.nonce_hash, amount_wei)
+
+        "eth_to_sol" ->
+          # Convert 18-decimal EVM amount to 9-decimal SPL lamports
+          amount_spl = Decimal.to_integer(Decimal.div(amount_wei, Decimal.new("1000000000")))
+          cross_chain_id = transfer.cross_chain_id || transfer.nonce_hash
+          nonce_hash     = transfer.nonce_hash || cross_chain_id
+          # instruction_payload stores the Solana destination wallet (base58)
+          # set by SepoliaIndexer when it sees the EthVault TokenLocked event
+          dest_wallet = transfer.instruction_payload || transfer.wallet
+          Logger.info("Relayer: eth_to_sol mint amount_spl=#{amount_spl} dest=#{dest_wallet} ccid=#{cross_chain_id}")
+          SolanaClient.mint_wrapped(cross_chain_id, amount_spl, nonce_hash, dest_wallet)
+
         _ ->
           Contract.mint_on_proof(transfer.wallet, transfer.nonce_hash, amount_wei)
       end

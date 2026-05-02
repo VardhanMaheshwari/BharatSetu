@@ -8,6 +8,7 @@ defmodule BharatData.Schemas.IndexerCheckpoint do
   schema "indexer_checkpoints" do
     field :chain,                :string
     field :last_processed_block, :integer
+    field :last_sig,             :string
 
     timestamps(inserted_at: false)
   end
