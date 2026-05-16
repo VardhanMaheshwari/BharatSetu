@@ -26,7 +26,7 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
   end
 
   @confirmation_depth Application.compile_env(:bharat_core, :confirmation_depth, 3)
-  @backfill_batch_size 9
+  @backfill_batch_size 1000
   @poll_interval_ms 3_000
   @chain "sepolia"
 
@@ -59,52 +59,62 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
   defp poll_new_blocks(state) do
     case Contract.sepolia_block_number() do
       {:ok, latest} when latest > state.current_block ->
-        from = state.current_block + 1
-        to   = min(latest, from + @backfill_batch_size - 1)
-
-        state =
-          case Contract.get_sepolia_logs(from, to) do
-            {:ok, logs} ->
-              Enum.reduce(logs, state, fn raw_log, acc ->
-                case EventParser.parse(raw_log) do
-                  {:tokens_burned, event} ->
-                    Logger.debug("[SepoliaIndexer] TokensBurned block=#{event.block_number} transfer=#{event.transfer_id}")
-                    put_in(acc.pending[{event.nonce_hash, event.tx_hash}], {event, event.block_number})
-                  _ -> acc
-                end
-              end)
-            {:error, reason} ->
-              Logger.error("[SepoliaIndexer] MintBridge get_logs #{from}..#{to} failed: #{inspect(reason)}")
-              state
-          end
-
-        # Also poll EthVault for ETH→SOL locks
-        state =
-          case Contract.get_eth_vault_logs(from, to) do
-            {:ok, logs} ->
-              Enum.reduce(logs, state, fn raw_log, acc ->
-                case EventParser.parse(raw_log) do
-                  {:eth_vault_locked, event} ->
-                    Logger.info("[SepoliaIndexer] EthVault TokenLocked block=#{event.block_number} transfer=#{event.transfer_id} amount=#{event.amount}")
-                    put_in(acc.pending[{event.transfer_id, event.tx_hash}], {event, event.block_number})
-                  _ -> acc
-                end
-              end)
-            {:error, reason} ->
-              Logger.error("[SepoliaIndexer] EthVault get_logs #{from}..#{to} failed: #{inspect(reason)}")
-              state
-          end
-
-        state = %{state | current_block: to}
-        state = promote_confirmed(state, to)
-        IndexerCheckpoints.update_last_block(to, @chain)
-        state
+        fetch_blocks(state, state.current_block + 1, latest)
 
       {:ok, _same} -> state
 
       {:error, reason} ->
         Logger.error("Sepolia eth_blockNumber failed: #{inspect(reason)}")
         state
+    end
+  end
+
+  defp fetch_blocks(state, from, latest) when from > latest, do: state
+  defp fetch_blocks(state, from, latest) do
+    to = min(latest, from + @backfill_batch_size - 1)
+
+    state =
+      case Contract.get_sepolia_logs(from, to) do
+        {:ok, logs} ->
+          Enum.reduce(logs, state, fn raw_log, acc ->
+            case EventParser.parse(raw_log) do
+              {:tokens_burned, event} ->
+                Logger.debug("[SepoliaIndexer] TokensBurned block=#{event.block_number} transfer=#{event.transfer_id}")
+                put_in(acc.pending[{event.nonce_hash, event.tx_hash}], {event, event.block_number})
+              _ -> acc
+            end
+          end)
+        {:error, reason} ->
+          Logger.error("[SepoliaIndexer] MintBridge get_logs #{from}..#{to} failed: #{inspect(reason)}")
+          state
+      end
+
+    # Also poll EthVault for ETH→SOL locks
+    state =
+      case Contract.get_eth_vault_logs(from, to) do
+        {:ok, logs} ->
+          Enum.reduce(logs, state, fn raw_log, acc ->
+            case EventParser.parse(raw_log) do
+              {:eth_vault_locked, event} ->
+                Logger.info("[SepoliaIndexer] EthVault TokenLocked block=#{event.block_number} transfer=#{event.transfer_id} amount=#{event.amount}")
+                put_in(acc.pending[{event.transfer_id, event.tx_hash}], {event, event.block_number})
+              _ -> acc
+            end
+          end)
+        {:error, reason} ->
+          Logger.error("[SepoliaIndexer] EthVault get_logs #{from}..#{to} failed: #{inspect(reason)}")
+          state
+      end
+
+    state = %{state | current_block: to}
+    state = promote_confirmed(state, to)
+    IndexerCheckpoints.update_last_block(to, @chain)
+    
+    if to < latest do
+      Process.sleep(50)
+      fetch_blocks(state, to + 1, latest)
+    else
+      state
     end
   end
 
@@ -180,7 +190,7 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
         Logger.error("[SepoliaIndexer] backfill EthVault #{from}..#{batch_to} failed: #{inspect(reason)}")
     end
 
-    Process.sleep(200)
+    Process.sleep(50)
     backfill_range(batch_to + 1, to)
   end
 

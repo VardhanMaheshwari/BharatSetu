@@ -116,7 +116,7 @@ type StepDef = {
 
 const STEPS_FORWARD: StepDef[] = [
   { key: "init",      label: "Approve & Lock",       desc: "Approve tCCS spend + lock tokens in LockBridge on Amoy",    eta: null,      chain: "Polygon Amoy",     chainCls: "amoy",    txField: "lock" },
-  { key: "locked",    label: "Awaiting Confirmation", desc: "Waiting for 12 block confirmations on Amoy",               eta: "~4 min",  chain: "Polygon Amoy",     chainCls: "amoy" },
+  { key: "locked",    label: "Awaiting Confirmation", desc: "Waiting for 3 block confirmations on Amoy",                eta: "~1 min",  chain: "Polygon Amoy",     chainCls: "amoy" },
   { key: "confirmed", label: "Relayer Processing",    desc: "Relayer detected lock — minting wCCC on Sepolia",          eta: "~30 sec", chain: "Eth Sepolia",      chainCls: "sepolia" },
   { key: "minted",    label: "Minted",                desc: "wCCC tokens minted to your Sepolia wallet",                eta: null,      chain: "Eth Sepolia",      chainCls: "sepolia", txField: "mint" },
   { key: "completed", label: "Complete",              desc: "Bridge transfer finished",                                 eta: null },

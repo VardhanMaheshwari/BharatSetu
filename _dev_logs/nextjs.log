@@ -3,13 +3,8 @@
 > next dev
 
  ⚠ Port 3000 is in use, trying 3001 instead.
- ⚠ Port 3001 is in use, trying 3002 instead.
- ⚠ Port 3002 is in use, trying 3003 instead.
-  [?25h
-t.js 14.2.3
-  - Local:        http://local[?25h
-03
+  ▲ Next.js 14.2.3
+  - Local:        http://localhost:3001
 
  ✓ Starting...
- ✓ Ready in 10.5s
-[?25h
+ ✓ Ready in 6.5s

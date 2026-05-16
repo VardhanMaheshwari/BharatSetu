@@ -14,7 +14,7 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
   alias BharatAdapters.Blockchain.Contract
 
   @confirmation_depth Application.compile_env(:bharat_core, :confirmation_depth, 3)
-  @backfill_batch_size 9
+  @backfill_batch_size 1000
   @poll_interval_ms 3_000
 
   def start_link(_), do: GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -46,30 +46,7 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
   defp poll_new_blocks(state) do
     case Contract.current_block_number() do
       {:ok, latest} when latest > state.current_block ->
-        from = state.current_block + 1
-        to   = min(latest, from + @backfill_batch_size - 1)
-
-        state =
-          case Contract.get_logs(from, to) do
-            {:ok, logs} ->
-              Enum.reduce(logs, state, fn raw_log, acc ->
-                case EventParser.parse(raw_log) do
-                  {:tokens_locked, event} ->
-                    Logger.debug("TokensLocked block=#{event.block_number} transfer=#{event.transfer_id}")
-                    put_in(acc.pending[event.nonce_hash], {event, event.block_number})
-                  {:unknown, _} -> acc
-                end
-              end)
-
-            {:error, reason} ->
-              Logger.error("eth_getLogs #{from}..#{to} failed: #{inspect(reason)}")
-              state
-          end
-
-        state = %{state | current_block: to}
-        state = promote_confirmed(state, to)
-        IndexerCheckpoints.update_last_block(to)
-        state
+        fetch_blocks(state, state.current_block + 1, latest)
 
       {:ok, _same} ->
         state
@@ -77,6 +54,40 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
       {:error, reason} ->
         Logger.error("eth_blockNumber failed: #{inspect(reason)}")
         state
+    end
+  end
+
+  defp fetch_blocks(state, from, latest) when from > latest, do: state
+  defp fetch_blocks(state, from, latest) do
+    to = min(latest, from + @backfill_batch_size - 1)
+
+    state =
+      case Contract.get_logs(from, to) do
+        {:ok, logs} ->
+          Enum.reduce(logs, state, fn raw_log, acc ->
+            case EventParser.parse(raw_log) do
+              {:tokens_locked, event} ->
+                Logger.debug("TokensLocked block=#{event.block_number} transfer=#{event.transfer_id}")
+                put_in(acc.pending[event.nonce_hash], {event, event.block_number})
+              {:unknown, _} -> acc
+            end
+          end)
+
+        {:error, reason} ->
+          Logger.error("eth_getLogs #{from}..#{to} failed: #{inspect(reason)}")
+          state
+      end
+
+    state = %{state | current_block: to}
+    state = promote_confirmed(state, to)
+    IndexerCheckpoints.update_last_block(to)
+    
+    # If we still have more blocks to catch up, continue immediately or with a tiny sleep
+    if to < latest do
+      Process.sleep(50)
+      fetch_blocks(state, to + 1, latest)
+    else
+      state
     end
   end
 
@@ -128,7 +139,7 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
         Logger.error("Backfill get_logs #{from}..#{batch_to} failed: #{inspect(reason)}")
     end
 
-    Process.sleep(200)
+    Process.sleep(50)
     backfill_range(batch_to + 1, to)
   end
 
