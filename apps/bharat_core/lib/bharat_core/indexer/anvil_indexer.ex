@@ -134,6 +134,7 @@ defmodule BharatCore.Indexer.AnvilIndexer do
         Logger.error("AnvilIndexer backfill get_logs #{from}..#{batch_to} failed: #{inspect(reason)}")
     end
 
+    Process.sleep(100)
     backfill_range(batch_to + 1, to)
   end
 

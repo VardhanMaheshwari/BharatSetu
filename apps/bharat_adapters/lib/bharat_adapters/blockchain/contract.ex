@@ -645,7 +645,7 @@ defmodule BharatAdapters.Blockchain.Contract do
 
   defp anvil_http_url do
     Application.get_env(:bharat_core, :anvil_http_url) ||
-      raise "anvil_http_url not configured"
+      "http://127.0.0.1:8545"
   end
 
   defp amoy_http_url do

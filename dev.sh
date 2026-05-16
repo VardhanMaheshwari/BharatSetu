@@ -16,7 +16,7 @@ info() { echo -e "  ${CYAN}→${RESET}  $*"; }
 fail() { echo -e "  ${RED}✗${RESET}  $*"; }
 sep()  { echo -e "${DIM}────────────────────────────────────────────────────${RESET}"; }
 
-port_open() { lsof -iTCP:"$1" -sTCP:LISTEN -t &>/dev/null; }
+port_open() { ss -ltn "( sport = :$1 )" | grep -q LISTEN; }
 
 wait_port() {
   local port=$1 name=$2 tries=0
@@ -63,6 +63,11 @@ echo -e "\n${BOLD}[0/5] Anvil (local CBDC ledger — POC v2)${RESET}"
 if port_open 8545; then
   ok "Anvil already running on :8545"
 else
+  # Ensure anvil is in path if installed via foundryup in default config location
+  if ! command -v anvil &>/dev/null && [ -f "$HOME/.config/.foundry/bin/anvil" ]; then
+    export PATH="$HOME/.config/.foundry/bin:$PATH"
+  fi
+
   if command -v anvil &>/dev/null; then
     info "Starting Anvil on :8545..."
     anvil --port 8545 --chain-id 31337 > "$LOG_DIR/anvil.log" 2>&1 &
@@ -99,15 +104,24 @@ else
   fi
 fi
 
-# ── 1. PostgreSQL ─────────────────────────────────────────────────────────────
-echo -e "\n${BOLD}[1/5] PostgreSQL${RESET}"
+# ── 1. PostgreSQL & Redis ─────────────────────────────────────────────────────
+echo -e "\n${BOLD}[1/5] Infrastructure (PostgreSQL & Redis)${RESET}"
 if port_open 5432; then
   ok "PostgreSQL running on :5432"
 else
   info "Starting PostgreSQL..."
-  brew services start postgresql@16 2>/dev/null || brew services start postgresql 2>/dev/null
+  brew services start postgresql@16 2>/dev/null || brew services start postgresql 2>/dev/null || sudo service postgresql start 2>/dev/null
   sleep 2
   if port_open 5432; then ok "PostgreSQL started"; else fail "PostgreSQL failed to start"; exit 1; fi
+fi
+
+if port_open 6379; then
+  ok "Redis running on :6379"
+else
+  info "Starting Redis..."
+  brew services start redis 2>/dev/null || sudo service redis-server start 2>/dev/null || redis-server --daemonize yes 2>/dev/null
+  sleep 1
+  if port_open 6379; then ok "Redis started"; else warn "Redis failed to start — Sign-in will fail"; fi
 fi
 
 # ── 2. Phoenix (kill existing, migrate, restart) ──────────────────────────────

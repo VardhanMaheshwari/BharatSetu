@@ -33,7 +33,7 @@ defmodule BharatCore.Application do
       BharatCore.Indexer.AnvilIndexer,
 
       # Solana indexer — polls lock_vault + nft_vault program events (Channel/Zone arch)
-      BharatCore.Indexer.SolanaIndexer,
+      # BharatCore.Indexer.SolanaIndexer,
 
       # Submits Anvil block hashes to BlockHashOracle on Amoy (MPT-proof path)
       BharatCore.Indexer.SolanaBlockHashReporter,

@@ -2,7 +2,7 @@ defmodule BharatWeb.Plugs.RateLimit do
   import Plug.Conn
   import Phoenix.Controller, only: [json: 2]
 
-  @max_requests 100
+  @max_requests 500
   @window_seconds 60
 
   def init(opts), do: opts
@@ -26,13 +26,19 @@ defmodule BharatWeb.Plugs.RateLimit do
   end
 
   defp check_rate(key) do
-    case Redix.pipeline(:redix, [
-           ["INCR", key],
-           ["EXPIRE", key, @window_seconds]
-         ]) do
-      {:ok, [count, _]} when count <= @max_requests -> {:ok, count}
-      {:ok, [count, _]} when count > @max_requests -> {:error, :exceeded}
-      _ -> {:ok, 0}
+    case Redix.command(:redix, ["INCR", key]) do
+      {:ok, 1} ->
+        Redix.command(:redix, ["EXPIRE", key, @window_seconds])
+        {:ok, 1}
+
+      {:ok, count} when count <= @max_requests ->
+        {:ok, count}
+
+      {:ok, count} ->
+        {:error, :exceeded}
+
+      _ ->
+        {:ok, 0}
     end
   end
 end

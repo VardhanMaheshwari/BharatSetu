@@ -10,11 +10,14 @@ config :bharat_web, BharatWeb.Endpoint,
   live_view: [signing_salt: "bharat_setu_lv"]
 
 config :bharat_core,
-  confirmation_depth: 3
+  confirmation_depth: 3,
+  solana_indexing_enabled: false,
+  anvil_indexing_enabled: false
 
 config :bharat_adapters,
   kyc_adapter: BharatAdapters.KYC.MockClient,
-  registry_adapter: BharatAdapters.Registry.MockStrategy
+  registry_adapter: BharatAdapters.Registry.MockStrategy,
+  anvil_http_url: "http://127.0.0.1:8545"
 
 config :bharat_data,
   ecto_repos: [BharatData.Repo]

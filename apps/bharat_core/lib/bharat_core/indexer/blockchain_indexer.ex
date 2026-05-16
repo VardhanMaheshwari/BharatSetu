@@ -128,6 +128,7 @@ defmodule BharatCore.Indexer.BlockchainIndexer do
         Logger.error("Backfill get_logs #{from}..#{batch_to} failed: #{inspect(reason)}")
     end
 
+    Process.sleep(200)
     backfill_range(batch_to + 1, to)
   end
 

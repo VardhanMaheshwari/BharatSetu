@@ -180,6 +180,7 @@ defmodule BharatCore.Indexer.SepoliaIndexer do
         Logger.error("[SepoliaIndexer] backfill EthVault #{from}..#{batch_to} failed: #{inspect(reason)}")
     end
 
+    Process.sleep(200)
     backfill_range(batch_to + 1, to)
   end
 

@@ -1,0 +1,2 @@
+{"ts":"2026-05-15T15:29:45.676Z","session":"1778858980347-knt4a","step":"transfer:created","direction":"amoy_to_sepolia","chainId":80002,"wallet":"0x63B0222b15d2E6B1CCeF487997F5FF64173cc7eF","transferId":"377e523e-b7f4-45a7-b4ec-2156cfc9ad72","state":"init"}
+{"ts":"2026-05-15T15:29:45.678Z","session":"1778858980347-knt4a","step":"transfer:creating","direction":"amoy_to_sepolia","chainId":80002,"wallet":"0x63B0222b15d2E6B1CCeF487997F5FF64173cc7eF","sourceToken":"0x504fA3fEd08ddC3F2a6E83C24e03aE4204414AE7","amount":"1"}
