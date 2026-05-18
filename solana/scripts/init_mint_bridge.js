@@ -103,21 +103,23 @@ async function main() {
   const configAcct = await connection.getAccountInfo(configPda);
   let wrappedMint;
 
+  let needsMint = true;
   if (configAcct) {
-    console.log("bridge_config already exists — skipping initialize");
+    console.log("bridge_config already exists — skipping initialize instruction");
     const envMint = process.env.SOLANA_WRAPPED_MINT;
     if (envMint) {
       wrappedMint = new PublicKey(envMint);
       console.log("Wrapped mint from env:", wrappedMint.toBase58());
+      needsMint = false;
     } else {
-      console.log("Set SOLANA_WRAPPED_MINT=<address> in .env");
+      console.log("Creating new wrapped mint and transferring authority to existing bridge_config...");
     }
-  } else {
+  }
+  
+  if (needsMint) {
     // Step 1: Create wrapped SPL mint (9 decimals)
-    // createMint internally uses polling via getSignatureStatus
     console.log("\nCreating wrapped SPL mint (9 decimals)...");
 
-    // Build createMint manually so we can use our own send+poll
     const mintKp = Keypair.generate();
     const mintRent = await connection.getMinimumBalanceForRentExemption(82);
 
@@ -129,7 +131,6 @@ async function main() {
         lamports:    mintRent,
         programId:   TOKEN_PROGRAM_ID,
       }),
-      // InitializeMint: opcode=0, decimals=9, mintAuthority=relayer, freezeAuthority=None
       new TransactionInstruction({
         programId: TOKEN_PROGRAM_ID,
         keys: [
@@ -152,20 +153,22 @@ async function main() {
     console.log("Wrapped SPL mint:", wrappedMint.toBase58());
     console.log("createMint tx:", mintSig);
 
-    // Step 2: Call initialize([relayer], threshold=1)
-    console.log("\nCalling initialize([relayer], threshold=1)...");
-    const initData = encodeInitialize([relayer.publicKey], 1);
-    const initIx   = new TransactionInstruction({
-      programId: MINT_BRIDGE_PROGRAM_ID,
-      keys: [
-        { pubkey: relayer.publicKey,          isSigner: true,  isWritable: true  },
-        { pubkey: configPda,                  isSigner: false, isWritable: true  },
-        { pubkey: SystemProgram.programId,    isSigner: false, isWritable: false },
-      ],
-      data: initData,
-    });
-    const initSig = await sendAndWait(connection, new Transaction().add(initIx), [relayer]);
-    console.log("initialize tx:", initSig);
+    if (!configAcct) {
+      // Step 2: Call initialize([relayer], threshold=1)
+      console.log("\nCalling initialize([relayer], threshold=1)...");
+      const initData = encodeInitialize([relayer.publicKey], 1);
+      const initIx   = new TransactionInstruction({
+        programId: MINT_BRIDGE_PROGRAM_ID,
+        keys: [
+          { pubkey: relayer.publicKey,          isSigner: true,  isWritable: true  },
+          { pubkey: configPda,                  isSigner: false, isWritable: true  },
+          { pubkey: SystemProgram.programId,    isSigner: false, isWritable: false },
+        ],
+        data: initData,
+      });
+      const initSig = await sendAndWait(connection, new Transaction().add(initIx), [relayer]);
+      console.log("initialize tx:", initSig);
+    }
 
     // Step 3: Transfer mint authority to bridge_config PDA
     console.log("\nTransferring mint authority to PDA...");

@@ -67,7 +67,7 @@ defmodule BharatData.Transfers do
   # Bypasses the multi-sig consensus path; Solana MintBridge has its own idempotency.
   def get_eth_to_sol_pending_mint(limit \\ 50) do
     Transfer
-    |> where([t], t.direction == "eth_to_sol" and t.state in ["hub_recorded", "validating", "confirmed"] and t.relay_attempts < 3)
+    |> where([t], t.direction == "eth_to_sol" and t.state in ["hub_recorded", "validating", "confirmed", "minting_b"] and t.relay_attempts < 3)
     |> order_by([t], asc: t.updated_at)
     |> limit(^limit)
     |> Repo.all()

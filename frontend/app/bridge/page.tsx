@@ -9,6 +9,11 @@ import { siweLogin, isLoggedIn } from "../../lib/siwe";
 import { createTransfer, confirmLock, getTransfer, getConfig, cancelTransfer, retryTransfer, Transfer, BridgeConfig } from "../../lib/api";
 import { subscribeToTransfer } from "../../lib/socket";
 
+// Solana
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { PublicKey, Transaction as SolanaTransaction } from "@solana/web3.js";
+
 const ERC20_APPROVE_ABI = [{
   name: "approve", type: "function",
   inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
@@ -228,7 +233,9 @@ export default function BridgePage() {
   const [errorContext, setErrorContext] = useState<"login" | "tx">("tx");
   const [submitting, setSubmitting]   = useState(false);
   const [copied, setCopied]           = useState(false);
-  const [solanaAddress, setSolanaAddress] = useState("2dM7Stmka8ZmwgS8S8EXEZr7EkeCztMTjw2ZyykqLYxm");
+  const { connection } = useConnection();
+  const { publicKey, connected: solConnected, sendTransaction: sendSolanaTransaction } = useWallet();
+  const solanaAddress = publicKey?.toBase58() || "";
   const [elapsed, setElapsed]         = useState(0);
   const [startedAt, setStartedAt]     = useState<number | null>(null);
   const [visualState, setVisualState] = useState<string | null>(null); // simulated intermediate state
@@ -403,11 +410,8 @@ export default function BridgePage() {
           return;
         }
 
-        // Update tx hashes and other DB fields but let visualState drive the step display
-        setTransfer((prev) => {
-          if (!prev) return t;
-          return { ...t, state: prev.state };
-        });
+        // Update transfer from DB — trust DB state for progress
+        setTransfer(t);
 
         // If sim hasn't started (no WS) and DB is past init, kick off sim
         setVisualState((vis) => {
@@ -976,28 +980,36 @@ export default function BridgePage() {
           )}
 
           {/* Solana destination address — ETH→SOL only */}
-          {direction === "eth_to_sol" && (
-            <div style={{ marginBottom: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
-                <div className="amount-label">Destination Solana Wallet</div>
-                {solanaAddress && (
-                  <span style={{ fontSize: "0.68rem", color: "var(--muted)", fontFamily: "monospace" }}>
-                    {solanaAddress.slice(0, 4)}…{solanaAddress.slice(-4)}
-                  </span>
+          {(direction === "eth_to_sol" || direction === "eth_nft_to_sol") && (
+            <div className="input-group" style={{ marginBottom: "0.75rem" }}>
+              <div className="input-label" style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Recipient Wallet ({CHAIN_META[toChain].label})</span>
+                {toChain === "solana" && (
+                  <div className="solana-adapter-wrapper">
+                    <WalletMultiButton />
+                  </div>
                 )}
               </div>
-              <input
-                type="password"
-                value={solanaAddress}
-                onChange={(e) => setSolanaAddress(e.target.value)}
-                placeholder="Solana address (base58)"
-                style={{
-                  width: "100%", padding: "0.6rem 0.75rem", borderRadius: 8,
-                  background: "var(--surface2)", border: "1px solid var(--border)",
-                  color: "var(--text)", fontSize: "0.8rem", fontFamily: "monospace",
-                  boxSizing: "border-box",
-                }}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder={toChain === "solana" ? "Connect Phantom wallet →" : "0x…"}
+                  value={solanaAddress}
+                  readOnly={toChain === "solana"}
+                  style={{ paddingLeft: "0.75rem", background: toChain === "solana" ? "var(--surface2)" : "var(--surface)", width: "100%", boxSizing: "border-box" }}
+                />
+                {toChain === "solana" && !solConnected && (
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "rgba(0,0,0,0.05)", borderRadius: 12, cursor: "pointer",
+                    fontSize: "0.85rem", color: "var(--primary)"
+                  }} onClick={() => (document.querySelector(".wallet-adapter-button") as HTMLButtonElement)?.click()}>
+                    Connect Solana Wallet
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

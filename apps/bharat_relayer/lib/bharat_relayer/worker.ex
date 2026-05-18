@@ -84,6 +84,11 @@ defmodule BharatRelayer.Worker do
           # instruction_payload stores the Solana destination wallet (base58)
           # set by SepoliaIndexer when it sees the EthVault TokenLocked event
           dest_wallet = transfer.instruction_payload || transfer.wallet
+          
+          # Transition state to minting_b so TransferServer is ready for on_committed_b
+          Transfers.update_state(transfer.id, "minting_b", %{})
+          BharatCore.Bridge.TransferServer.execute_zone_b(transfer.id)
+          
           Logger.info("Relayer: eth_to_sol mint amount_spl=#{amount_spl} dest=#{dest_wallet} ccid=#{cross_chain_id}")
           SolanaClient.mint_wrapped(cross_chain_id, amount_spl, nonce_hash, dest_wallet)
 
@@ -93,8 +98,13 @@ defmodule BharatRelayer.Worker do
 
     case result do
       {:ok, mint_tx_hash} ->
-        Transfers.update_state(transfer.id, "minted", %{mint_tx_hash: mint_tx_hash})
-        TransferServer.on_minted(transfer.id, mint_tx_hash)
+        if transfer.direction == "eth_to_sol" do
+          Transfers.update_state(transfer.id, "committed_b", %{mint_tx_hash: mint_tx_hash})
+          TransferServer.on_committed_b(transfer.id, mint_tx_hash)
+        else
+          Transfers.update_state(transfer.id, "minted", %{mint_tx_hash: mint_tx_hash})
+          TransferServer.on_minted(transfer.id, mint_tx_hash)
+        end
         Logger.info("Relayer: completed transfer #{transfer.id} — tx #{mint_tx_hash}")
 
       {:error, reason} ->

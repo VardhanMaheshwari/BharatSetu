@@ -134,12 +134,22 @@ defmodule BharatCore.Bridge.TransferServer do
     :ok
   end
 
+  # Called by relayer when starting zone_b mint/unlock
+  def execute_zone_b(id) do
+    case lookup(id) do
+      {:ok, pid} -> GenServer.cast(pid, :execute_zone_b)
+      {:error, _} -> :ok
+    end
+  end
+
   # Called by relayer after zone_b mint/unlock confirmed
   def on_committed_b(id, commit_tx) do
     case lookup(id) do
       {:ok, pid} -> GenServer.cast(pid, {:committed_b, commit_tx})
       {:error, _} ->
         Transfers.commit_b(id, commit_tx)
+        Transfers.commit_a(id, nil)
+        Transfers.finalize(id, nil)
     end
     :ok
   end
@@ -345,8 +355,14 @@ defmodule BharatCore.Bridge.TransferServer do
     {:noreply, s, {:continue, :execute_zone_b}}
   end
 
+  # Explicit trigger from relayer to enter minting_b state
+  def handle_cast(:execute_zone_b, s) do
+    {:noreply, s, {:continue, :execute_zone_b}}
+  end
+
   # Zone_b action confirmed
-  def handle_cast({:committed_b, commit_tx}, %{state: :minting_b} = s) do
+  def handle_cast({:committed_b, commit_tx}, s) do
+    # Allow committed_b from minting_b (normal) or hub_recorded/validating (relayer skip)
     s = %{s | state: :committed_b}
     Transfers.commit_b(s.id, commit_tx)
     broadcast(s.id, %{event: "state_change", state: "committed_b", tx: commit_tx})

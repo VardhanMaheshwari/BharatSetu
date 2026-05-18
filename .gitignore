@@ -38,4 +38,4 @@ CLAUDE.md
 *.docx
 summary.docx
 graphify-out
-
+_dev_logs/
