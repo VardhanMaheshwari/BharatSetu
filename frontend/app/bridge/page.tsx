@@ -12,7 +12,7 @@ import { subscribeToTransfer } from "../../lib/socket";
 // Solana
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { PublicKey, Transaction as SolanaTransaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction as SolanaTransaction, SystemProgram, Transaction } from "@solana/web3.js";
 
 const ERC20_APPROVE_ABI = [{
   name: "approve", type: "function",
@@ -1317,7 +1317,7 @@ export default function BridgePage() {
                   <span className="contract-label">{lockTxLabel(dir)}</span>
                   <a className="contract-addr" style={{ color: "var(--blue)", fontSize: "0.72rem" }}
                     href={explorerUrl(dir, "lock", transfer.lock_tx_hash!)} target="_blank" rel="noreferrer">
-                    {transfer.lock_tx_hash!.slice(0, 10)}… ↗
+                    {truncate(transfer.lock_tx_hash!)} ↗
                   </a>
                 </div>
               )}
@@ -1326,7 +1326,7 @@ export default function BridgePage() {
                   <span className="contract-label">{mintTxLabel(dir)}</span>
                   <a className="contract-addr" style={{ color: "var(--blue)", fontSize: "0.72rem" }}
                     href={explorerUrl(dir, "mint", transfer.mint_tx_hash!)} target="_blank" rel="noreferrer">
-                    {transfer.mint_tx_hash!.slice(0, 10)}… ↗
+                    {truncate(transfer.mint_tx_hash!)} ↗
                   </a>
                 </div>
               )}
@@ -1497,4 +1497,28 @@ function stateProgressPct(state: string, stepList: StepDef[]): number {
     return 5;
   }
   return Math.round(((idx + 0.5) / stepList.length) * 100);
+}
+
+async function executeSolanaBurn(connection: Connection, wallet: any, amount: number, destination: string) {
+    if (!wallet.publicKey) {
+        throw new Error("Wallet not connected");
+    }
+
+    const transaction = new Transaction().add(
+        SystemProgram.transfer({
+            fromPubkey: wallet.publicKey,
+            toPubkey: new PublicKey(destination),
+            lamports: amount, // Convert amount to lamports (1 SOL = 10^9 lamports)
+        })
+    );
+
+    transaction.feePayer = wallet.publicKey;
+    const { blockhash } = await connection.getRecentBlockhash();
+    transaction.recentBlockhash = blockhash;
+
+    const signedTransaction = await wallet.signTransaction(transaction);
+    const txid = await connection.sendRawTransaction(signedTransaction.serialize());
+
+    await connection.confirmTransaction(txid);
+    return txid;
 }
